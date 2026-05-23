@@ -1,0 +1,63 @@
+# configs/training_config.yaml
+# Master configuration for the fraud detection training pipeline
+
+data:
+  raw_path:       "data/raw/transactions.parquet"
+  processed_path: "data/processed/features.parquet"
+  reference_path: "data/reference/clean_baseline.parquet"
+  test_size:      0.2
+  val_size:       0.1
+  random_state:   42
+
+features:
+  velocity_windows:      ["1h", "6h", "24h", "7d"]
+  high_risk_countries:   ["NG", "RU", "KP", "IR"]
+  merchant_smoothing:    10
+  nlp_max_features:      5000
+  nlp_ngram_range:       [1, 2]
+
+xgboost:
+  n_trials:            50
+  cv_folds:            3
+  use_smote:           true
+  smote_ratio:         0.1
+  decision_threshold:  0.35
+  eval_metric:         "aucpr"
+
+autoencoder:
+  latent_dim:            16
+  epochs:                50
+  batch_size:            256
+  threshold_percentile:  95.0
+  learning_rate:         0.001
+
+ensemble:
+  weight_xgboost:       0.50
+  weight_autoencoder:   0.30
+  weight_nlp:           0.20
+  velocity_1h_override: 15
+  amount_zscore_override: 5.0
+  xgboost_hard_threshold: 0.90
+  decision_threshold:   0.50
+
+monitoring:
+  psi_threshold:          0.2
+  fraud_rate_threshold:   0.015
+  recall_drop_threshold:  0.05
+  report_dir:             "reports/drift"
+  check_frequency:        "daily"
+
+mlflow:
+  tracking_uri:  "http://localhost:5000"
+  experiment:    "fraud-detection"
+  registry_name: "fraud-ensemble"
+
+api:
+  host:          "0.0.0.0"
+  port:          8000
+  workers:       2
+  model_path:    "models/ensemble.joblib"
+
+logging:
+  level:   "INFO"
+  format:  "%(asctime)s | %(name)s | %(levelname)s | %(message)s"

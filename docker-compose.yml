@@ -1,0 +1,108 @@
+version: "3.9"
+
+services:
+
+  # ── Fraud Detection API ─────────────────────────────────────────────────
+  fraud-api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/models/ensemble.joblib
+      - MODEL_VERSION=1.0.0
+    volumes:
+      - ../models:/app/models:ro
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - fraud-net
+
+  # ── Streamlit Dashboard ─────────────────────────────────────────────────
+  dashboard:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -c "pip install streamlit plotly pandas numpy -q &&
+               streamlit run app/dashboard.py --server.port=8501 --server.address=0.0.0.0"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ..:/app
+    networks:
+      - fraud-net
+
+  # ── MLflow Tracking Server ──────────────────────────────────────────────
+  mlflow:
+    image: python:3.10-slim
+    command: >
+      bash -c "pip install mlflow boto3 psycopg2-binary -q &&
+               mlflow server --host 0.0.0.0 --port 5000
+               --backend-store-uri postgresql://mlflow:mlflow@postgres/mlflow
+               --default-artifact-root s3://your-bucket/mlflow"
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+    networks:
+      - fraud-net
+
+  # ── Redis (feature cache) ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - fraud-net
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER:     mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB:       mlflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - fraud-net
+
+  # ── Prometheus ──────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - fraud-net
+
+  # ── Grafana ─────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - fraud-net
+
+volumes:
+  redis-data:
+  pg-data:
+  grafana-data:
+
+networks:
+  fraud-net:
+    driver: bridge
